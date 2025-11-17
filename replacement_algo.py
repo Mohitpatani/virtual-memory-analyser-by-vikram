@@ -1,113 +1,72 @@
-from collections import deque
+# replacement_algo.py (CORRECTED)
 
-class FIFOPageReplacement:
+class PageReplacementAlgorithm:
     def __init__(self, frame_count):
-        self.frames = deque()
+        self.frames = [-1] * frame_count
         self.frame_count = frame_count
 
-    def replace(self, page_number):
-        if page_number in self.frames:
-            return False
-        if len(self.frames) >= self.frame_count:
-            self.frames.popleft()
-        self.frames.append(page_number)
-        return True
-
     def get_frames(self):
-        return list(self.frames)
+        return [page if page != -1 else None for page in self.frames]
 
+    def access(self, page_number):
+        pass
 
-class LRUPageReplacement:
+    def replace(self, page_number):
+        raise NotImplementedError("Subclass must implement abstract method replace")
+
+class FIFO(PageReplacementAlgorithm):
     def __init__(self, frame_count):
-        self.frames = []
-        self.frame_count = frame_count
-        self.usage_order = []
+        super().__init__(frame_count)
+        self.load_order = [] 
 
     def replace(self, page_number):
         if page_number in self.frames:
-            self.usage_order.remove(page_number)
-            self.usage_order.append(page_number)
-            return False
-        if len(self.frames) < self.frame_count:
-            self.frames.append(page_number)
+            return None # Page hit
+
+        if -1 in self.frames:
+            free_index = self.frames.index(-1)
+            self.frames[free_index] = page_number
+            self.load_order.append(page_number)
+            return -1 # Fault, no eviction (capacity available)
+
         else:
-            lru = self.usage_order.pop(0)
-            self.frames.remove(lru)
-            self.frames.append(page_number)
-        self.usage_order.append(page_number)
-        return True
+            evicted_page = self.load_order.pop(0)
+            evicted_index = self.frames.index(evicted_page)
+            
+            self.frames[evicted_index] = page_number
+            self.load_order.append(page_number)
+            
+            return evicted_page # Fault, eviction occurred
 
-    def get_frames(self):
-        return list(self.frames)
-
-
-class MRUPageReplacement:
+class LIFO(PageReplacementAlgorithm):
     def __init__(self, frame_count):
-        self.frames = []
-        self.frame_count = frame_count
-        self.usage_order = []
+        super().__init__(frame_count)
+        self.load_stack = []
 
     def replace(self, page_number):
         if page_number in self.frames:
-            self.usage_order.remove(page_number)
-            self.usage_order.append(page_number)
-            return False
-        if len(self.frames) < self.frame_count:
-            self.frames.append(page_number)
+            return None # Page hit
+
+        if -1 in self.frames:
+            free_index = self.frames.index(-1)
+            self.frames[free_index] = page_number
+            self.load_stack.append(page_number)
+            return -1 # Fault, no eviction
+
         else:
-            mru = self.usage_order.pop(-1)
-            self.frames.remove(mru)
-            self.frames.append(page_number)
-        self.usage_order.append(page_number)
-        return True
+            evicted_page = self.load_stack.pop()
+            evicted_index = self.frames.index(evicted_page)
+            
+            self.frames[evicted_index] = page_number
+            self.load_stack.append(page_number)
+            
+            return evicted_page # Fault, eviction occurred
 
-    def get_frames(self):
-        return list(self.frames)
-
-
-class OptimalPageReplacement:
-    def __init__(self, frame_count, reference_string=None):
-        self.frames = []
-        self.frame_count = frame_count
-        self.reference_string = reference_string or []
-        self.current_index = 0
-
-    def replace(self, page_number):
-        if page_number in self.frames:
-            self.current_index += 1
-            return False
-        if len(self.frames) < self.frame_count:
-            self.frames.append(page_number)
-        else:
-            future = self.reference_string[self.current_index + 1:]
-            indices = []
-            for f in self.frames:
-                if f in future:
-                    indices.append(future.index(f))
-                else:
-                    indices.append(float('inf'))
-            victim_index = indices.index(max(indices))
-            self.frames[victim_index] = page_number
-        self.current_index += 1
-        return True
-
-    def get_frames(self):
-        return list(self.frames)
-
-    def reset(self):
-        self.frames.clear()
-        self.current_index = 0
-
-
-def get_algorithm(name, frame_count, reference_string=None):
-    name = name.upper()
+def get_algorithm(algorithm_name, frame_count, reference_string=None):
+    name = algorithm_name.upper()
     if name == "FIFO":
-        return FIFOPageReplacement(frame_count)
-    elif name == "LRU":
-        return LRUPageReplacement(frame_count)
-    elif name == "MRU":
-        return MRUPageReplacement(frame_count)
-    elif name == "OPTIMAL":
-        return OptimalPageReplacement(frame_count, reference_string)
+        return FIFO(frame_count)
+    elif name == "LIFO":
+        return LIFO(frame_count)
     else:
-        raise ValueError(f"Unknown replacement algorithm: {name}")
+        raise ValueError(f"Unknown algorithm: {algorithm_name}")
