@@ -1,4 +1,4 @@
-// js/script.js (CORRECTED)
+// js/script.js (CORRECTED with Charting Logic)
 
 let frames = [];
 let pageTableSize = 16;
@@ -6,6 +6,10 @@ let frameCount = 4;
 let pageFaults = 0;
 let totalAccesses = 0;
 let currentAlgorithm = "FIFO";
+
+// Charting variables
+let performanceChart;
+let performanceData = []; // To store history of fault rates
 
 const frameCountInput = document.getElementById("frame-count");
 
@@ -16,12 +20,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const darkModeToggle = document.getElementById("dark-mode-toggle");
     const algoSelect = document.getElementById("algo-select");
 
-    // Read initial values
     pageTableSize = parseInt(document.getElementById("page-table-size").value);
     frameCount = parseInt(frameCountInput.value);
 
     initPageTable();
-    setAlgorithm(currentAlgorithm, frameCount);
+    // Initialize the chart and the backend state
+    initializeChart();
+    setAlgorithm(currentAlgorithm, frameCount); 
 
     frameCountInput.onchange = async () => {
         const newFrameCount = parseInt(frameCountInput.value);
@@ -65,6 +70,56 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 });
 
+// --- CHARTING FUNCTIONS (NEW) ---
+
+function initializeChart() {
+    const ctx = document.getElementById('performanceChart');
+    
+    if (performanceChart) {
+        performanceChart.destroy();
+    }
+
+    performanceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [], 
+            datasets: [{
+                label: 'Fault Rate (%)',
+                data: [], 
+                borderColor: '#e74c3c', // Red/Error color
+                backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                tension: 0.2,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Fault Rate (%)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updatePerformanceChart(currentFaultRate) {
+    const accessCount = performanceData.length + 1;
+    performanceData.push(currentFaultRate);
+
+    performanceChart.data.labels.push(accessCount);
+    performanceChart.data.datasets[0].data.push(currentFaultRate);
+    performanceChart.update();
+}
+
+// --- CORE SIMULATION FUNCTIONS (Updated) ---
+
 function initPageTable() {
     const table = document.getElementById("page-table");
     table.innerHTML = '';
@@ -94,6 +149,9 @@ async function accessPage(page) {
         
         pageFaults = data.total_faults; 
         const faultRate = data.fault_rate;
+
+        // NEW: Update the chart after getting fresh metrics
+        updatePerformanceChart(faultRate); 
 
         updateFramesUI();
         updateStats(faultRate);
@@ -137,7 +195,6 @@ function updateFramesUI() {
         const cell = document.createElement("div");
         const page = frames[i];
         
-        // Display the page number or an empty state
         cell.textContent = page === null || page === undefined ? "-" : page; 
         
         frameDiv.appendChild(cell);
@@ -178,4 +235,8 @@ function resetSimulation(initialFrames = []) {
     document.getElementById("log-entries").innerHTML = '';
     document.getElementById("last-page").textContent = "-";
     initPageTable();
+
+    // NEW: Reset the performance history and re-initialize the chart
+    performanceData = [];
+    initializeChart();
 }
