@@ -1,3 +1,5 @@
+// js/script.js (CORRECTED)
+
 let frames = [];
 let pageTableSize = 16;
 let frameCount = 4;
@@ -5,10 +7,7 @@ let pageFaults = 0;
 let totalAccesses = 0;
 let currentAlgorithm = "FIFO";
 
-// Chart instances
-let pageFaultChart;
-let memoryUsageChart;
-let pageTableStatusChart;
+const frameCountInput = document.getElementById("frame-count");
 
 document.addEventListener("DOMContentLoaded", () => {
     const accessBtn = document.getElementById("access-btn");
@@ -19,22 +18,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Read initial values
     pageTableSize = parseInt(document.getElementById("page-table-size").value);
-    frameCount = parseInt(document.getElementById("frame-count").value);
+    frameCount = parseInt(frameCountInput.value);
 
-    // Initialize UI
     initPageTable();
-    initCharts();
+    setAlgorithm(currentAlgorithm, frameCount);
 
-    // Set initial dark mode based on checkbox
-    document.body.classList.toggle("dark-mode", darkModeToggle.checked);
-
-    // Algorithm change
-    algoSelect.onchange = async () => {
-        currentAlgorithm = algoSelect.value;
-        await setAlgorithm(currentAlgorithm);
+    frameCountInput.onchange = async () => {
+        const newFrameCount = parseInt(frameCountInput.value);
+        if (!isNaN(newFrameCount) && newFrameCount > 0) {
+            frameCount = newFrameCount;
+            await setAlgorithm(currentAlgorithm, frameCount);
+        } else {
+            alert("Frame count must be a positive number.");
+            frameCountInput.value = frameCount;
+        }
     };
 
-    // Single page access
+    algoSelect.onchange = async () => {
+        currentAlgorithm = algoSelect.value;
+        await setAlgorithm(currentAlgorithm, frameCount);
+    };
+
     accessBtn.onclick = async () => {
         const page = parseInt(document.getElementById("page-input").value);
         if (!isNaN(page)) {
@@ -42,26 +46,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Run sequence
     runBtn.onclick = async () => {
         const seqInput = document.getElementById("access-sequence").value;
         const sequence = seqInput.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+        
+        await setAlgorithm(currentAlgorithm, frameCount); 
+        
         for (let i = 0; i < sequence.length; i++) {
             await new Promise(r => setTimeout(r, 500));
             await accessPage(sequence[i]);
         }
     };
 
-    // Reset simulation
     resetBtn.onclick = resetSimulation;
 
-    // Dark mode toggle
     darkModeToggle.onchange = () => {
-        document.body.classList.toggle("dark-mode", darkModeToggle.checked);
+        document.body.classList.toggle("dark-mode");
     };
 });
 
-/* ------------------ PAGE TABLE ------------------ */
 function initPageTable() {
     const table = document.getElementById("page-table");
     table.innerHTML = '';
@@ -73,16 +76,9 @@ function initPageTable() {
     }
 }
 
-function highlightPage(page, isFault) {
-    document.querySelectorAll("#page-table .fault").forEach(el => el.classList.remove("fault"));
-    const cell = document.getElementById(`page-${page}`);
-    if (cell && isFault) {
-        cell.classList.add("fault");
-    }
-}
-
-/* ------------------ PAGE ACCESS ------------------ */
 async function accessPage(page) {
+    totalAccesses++;
+
     try {
         const response = await fetch("/access", {
             method: "POST",
@@ -95,14 +91,13 @@ async function accessPage(page) {
 
         frames = data.frames;
         const isFault = data.last_fault;
-
-        totalAccesses = data.page_table.total_accesses || (totalAccesses + 1);
-        pageFaults = data.page_table.total_faults || (pageFaults + (isFault ? 1 : 0));
+        
+        pageFaults = data.total_faults; 
+        const faultRate = data.fault_rate;
 
         updateFramesUI();
-        updateStats();
+        updateStats(faultRate);
         logAccess(page, isFault);
-        updateCharts();
 
         document.getElementById("last-page").textContent = page;
         highlightPage(page, isFault);
@@ -113,20 +108,20 @@ async function accessPage(page) {
     }
 }
 
-/* ------------------ ALGORITHM ------------------ */
-async function setAlgorithm(algorithm) {
+async function setAlgorithm(algorithm, frame_count) {
     try {
         const response = await fetch("/set_algorithm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ algorithm })
+            body: JSON.stringify({ algorithm, frame_count })
         });
 
         const data = await response.json();
+
         if (data.error) throw new Error(data.error);
 
-        console.log(`✅ Switched to ${data.algorithm} algorithm`);
-        resetSimulation();
+        console.log(`✅ Switched to ${data.algorithm} algorithm with ${frame_count} frames`);
+        resetSimulation(data.metrics.frames); 
 
     } catch (err) {
         console.error("Set algorithm error:", err);
@@ -134,26 +129,33 @@ async function setAlgorithm(algorithm) {
     }
 }
 
-/* ------------------ UI UPDATES ------------------ */
 function updateFramesUI() {
     const frameDiv = document.getElementById("frames");
     frameDiv.innerHTML = '';
-    frames.forEach(page => {
+    
+    for (let i = 0; i < frameCount; i++) {
         const cell = document.createElement("div");
-        cell.textContent = page;
+        const page = frames[i];
+        
+        // Display the page number or an empty state
+        cell.textContent = page === null || page === undefined ? "-" : page; 
+        
         frameDiv.appendChild(cell);
-    });
+    }
 }
 
-function updateStats() {
+function updateStats(faultRateFromBackend) {
     document.getElementById("total-accesses").textContent = totalAccesses;
     document.getElementById("page-faults").textContent = pageFaults;
-    const hitRate = totalAccesses === 0 ? 0 : ((totalAccesses - pageFaults) / totalAccesses * 100).toFixed(2);
-    document.getElementById("fault-rate").textContent = `${hitRate}%`;
+    document.getElementById("fault-rate").textContent = `${faultRateFromBackend}%`;
+}
 
-    // Update hit rate bar
-    const hitBar = document.getElementById("hit-rate-fill");
-    if (hitBar) hitBar.style.width = `${hitRate}%`;
+function highlightPage(page, isFault) {
+    document.querySelectorAll("#page-table .fault").forEach(el => el.classList.remove("fault"));
+    const cell = document.getElementById(`page-${page}`);
+    if (cell && isFault) {
+        cell.classList.add("fault");
+    }
 }
 
 function logAccess(page, isFault) {
@@ -163,71 +165,17 @@ function logAccess(page, isFault) {
     log.appendChild(li);
 }
 
-function resetSimulation() {
-    frames = [];
+function resetSimulation(initialFrames = []) {
+    frameCount = parseInt(frameCountInput.value) || 4; 
+    
+    frames = initialFrames;
     pageFaults = 0;
     totalAccesses = 0;
-
-    updateStats();
+    
+    updateStats(0);
+    
     updateFramesUI();
     document.getElementById("log-entries").innerHTML = '';
     document.getElementById("last-page").textContent = "-";
     initPageTable();
-    resetCharts();
-}
-
-/* ------------------ CHARTS ------------------ */
-function initCharts() {
-    // Page Fault Chart
-    const pfCtx = document.getElementById("pageFaultChart").getContext("2d");
-    pageFaultChart = new Chart(pfCtx, {
-        type: "line",
-        data: { labels: [], datasets: [{ label: "Page Faults", data: [], borderColor: "red", fill: false }] },
-        options: { responsive: true, animation: false }
-    });
-
-    // Memory Usage Chart
-    const muCtx = document.getElementById("memoryUsageChart").getContext("2d");
-    memoryUsageChart = new Chart(muCtx, {
-        type: "bar",
-        data: { labels: Array.from({ length: frameCount }, (_, i) => `Frame ${i}`), datasets: [{ label: "Occupied", data: Array(frameCount).fill(0), backgroundColor: "blue" }] },
-        options: { responsive: true, animation: false }
-    });
-
-    // Page Table Status Chart
-    const ptsCtx = document.getElementById("pageTableStatusChart").getContext("2d");
-    pageTableStatusChart = new Chart(ptsCtx, {
-        type: "bar",
-        data: { labels: Array.from({ length: pageTableSize }, (_, i) => `Page ${i}`), datasets: [{ label: "Loaded (1 = yes, 0 = no)", data: Array(pageTableSize).fill(0), backgroundColor: "green" }] },
-        options: { responsive: true, animation: false }
-    });
-}
-
-function updateCharts() {
-    // Page Fault Chart
-    pageFaultChart.data.labels.push(totalAccesses);
-    pageFaultChart.data.datasets[0].data.push(pageFaults);
-    pageFaultChart.update();
-
-    // Memory Usage
-    memoryUsageChart.data.datasets[0].data = Array(frameCount).fill(0);
-    frames.forEach(f => memoryUsageChart.data.datasets[0].data[f] = 1);
-    memoryUsageChart.update();
-
-    // Page Table Status
-    pageTableStatusChart.data.datasets[0].data = Array(pageTableSize).fill(0);
-    frames.forEach(p => pageTableStatusChart.data.datasets[0].data[p] = 1);
-    pageTableStatusChart.update();
-}
-
-function resetCharts() {
-    pageFaultChart.data.labels = [];
-    pageFaultChart.data.datasets[0].data = [];
-    pageFaultChart.update();
-
-    memoryUsageChart.data.datasets[0].data = Array(frameCount).fill(0);
-    memoryUsageChart.update();
-
-    pageTableStatusChart.data.datasets[0].data = Array(pageTableSize).fill(0);
-    pageTableStatusChart.update();
 }
