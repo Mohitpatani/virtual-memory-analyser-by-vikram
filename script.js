@@ -1,4 +1,4 @@
-// js/script.js (CORRECTED with Charting Logic)
+// js/script.js (CORRECTED with ALL 3 Charts)
 
 let frames = [];
 let pageTableSize = 16;
@@ -9,7 +9,9 @@ let currentAlgorithm = "FIFO";
 
 // Charting variables
 let performanceChart;
-let performanceData = []; // To store history of fault rates
+let memoryUsageChart; // NEW
+let pageTableChart;   // NEW
+let performanceData = [];
 
 const frameCountInput = document.getElementById("frame-count");
 
@@ -24,8 +26,8 @@ document.addEventListener("DOMContentLoaded", () => {
     frameCount = parseInt(frameCountInput.value);
 
     initPageTable();
-    // Initialize the chart and the backend state
-    initializeChart();
+    // Initialize all charts and the backend state
+    initializeAllCharts();
     setAlgorithm(currentAlgorithm, frameCount); 
 
     frameCountInput.onchange = async () => {
@@ -70,14 +72,20 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 });
 
-// --- CHARTING FUNCTIONS (NEW) ---
 
-function initializeChart() {
+// --- CHART INITIALIZATION AND UPDATE FUNCTIONS ---
+
+function initializeAllCharts() {
+    initializePerformanceChart();
+    initializeMemoryUsageChart();
+    initializePageTableChart();
+}
+
+
+// Performance Chart (Line Chart) - Existing Logic
+function initializePerformanceChart() {
     const ctx = document.getElementById('performanceChart');
-    
-    if (performanceChart) {
-        performanceChart.destroy();
-    }
+    if (performanceChart) performanceChart.destroy();
 
     performanceChart = new Chart(ctx, {
         type: 'line',
@@ -86,7 +94,7 @@ function initializeChart() {
             datasets: [{
                 label: 'Fault Rate (%)',
                 data: [], 
-                borderColor: '#e74c3c', // Red/Error color
+                borderColor: '#e74c3c',
                 backgroundColor: 'rgba(231, 76, 60, 0.2)',
                 tension: 0.2,
                 fill: true
@@ -96,14 +104,7 @@ function initializeChart() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 100,
-                    title: {
-                        display: true,
-                        text: 'Fault Rate (%)'
-                    }
-                }
+                y: { beginAtZero: true, max: 100 }
             }
         }
     });
@@ -118,19 +119,126 @@ function updatePerformanceChart(currentFaultRate) {
     performanceChart.update();
 }
 
-// --- CORE SIMULATION FUNCTIONS (Updated) ---
 
-function initPageTable() {
-    const table = document.getElementById("page-table");
-    table.innerHTML = '';
-    for (let i = 0; i < pageTableSize; i++) {
-        const cell = document.createElement("div");
-        cell.id = `page-${i}`;
-        cell.textContent = i;
-        table.appendChild(cell);
-    }
+// Memory Usage Chart (Bar Chart) - NEW Implementation for simple bar chart
+function initializeMemoryUsageChart() {
+    const ctx = document.getElementById('memoryUsageChart');
+    if (memoryUsageChart) memoryUsageChart.destroy();
+    
+    // Create labels based on the current frameCount
+    const labels = Array.from({ length: frameCount }, (_, i) => `Frame ${i}`); 
+
+    memoryUsageChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Occupied',
+                data: Array(frameCount).fill(0), // Start with all empty
+                backgroundColor: '#2980b9', // Blue color for memory
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 1.0, // Max value is 1 (Occupied)
+                    ticks: {
+                        stepSize: 0.1,
+                        callback: (value) => value === 1 ? 'Occupied' : value === 0 ? 'Free' : ''
+                    }
+                }
+            }
+        }
+    });
 }
 
+function updateMemoryUsageChart(frameOccupancy) {
+    // frameOccupancy is an array like [1, 0, 1, 1]
+    memoryUsageChart.data.datasets[0].data = frameOccupancy;
+    
+    // Re-create labels in case frameCount changed during reset
+    const newLabels = Array.from({ length: frameCount }, (_, i) => `Frame ${i}`);
+    memoryUsageChart.data.labels = newLabels;
+
+    memoryUsageChart.update();
+}
+
+
+// Page Table Status Chart (Bar Chart) - NEW Implementation
+function initializePageTableChart() {
+    const ctx = document.getElementById('pageTableChart');
+    if (pageTableChart) pageTableChart.destroy();
+    
+    // Create labels based on the global pageTableSize
+    const labels = Array.from({ length: pageTableSize }, (_, i) => `Page ${i}`); 
+
+    pageTableChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Loaded (1=yes, 0=no)',
+                data: Array(pageTableSize).fill(0),
+                backgroundColor: '#27ae60', // Green color for loaded status
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 1.0, 
+                    ticks: {
+                        stepSize: 0.1,
+                        callback: (value) => value === 1 ? 'Loaded' : value === 0 ? 'Unloaded' : ''
+                    }
+                },
+                x: {
+                    // Optional: Ensures all bars are visible if there are many pages
+                    barPercentage: 1.0,
+                    categoryPercentage: 0.8
+                }
+            }
+        }
+    });
+}
+
+function updatePageTableChart(pageTableState) {
+    // pageTableState is an object {0: 1, 1: 0, ...}
+    const data = Object.values(pageTableState);
+
+    pageTableChart.data.datasets[0].data = data;
+    pageTableChart.update();
+}
+
+
+// --- CORE SIMULATION FUNCTIONS (Updated to include new charts) ---
+
+// This function needs to be updated to ensure all charts are initialized on reset.
+function resetSimulation(initialFrames = []) {
+    frameCount = parseInt(frameCountInput.value) || 4; 
+    
+    frames = initialFrames;
+    pageFaults = 0;
+    totalAccesses = 0;
+    
+    updateStats(0);
+    
+    updateFramesUI();
+    document.getElementById("log-entries").innerHTML = '';
+    document.getElementById("last-page").textContent = "-";
+    initPageTable();
+
+    // Reset performance data and initialize all charts
+    performanceData = [];
+    initializeAllCharts(); 
+}
+
+// This function needs to be updated to call all chart updates.
 async function accessPage(page) {
     totalAccesses++;
 
@@ -150,9 +258,11 @@ async function accessPage(page) {
         pageFaults = data.total_faults; 
         const faultRate = data.fault_rate;
 
-        // NEW: Update the chart after getting fresh metrics
-        updatePerformanceChart(faultRate); 
-
+        // NEW: Update all charts with fresh data
+        updatePerformanceChart(faultRate);
+        updateMemoryUsageChart(data.frame_occupancy);
+        updatePageTableChart(data.page_table);
+        
         updateFramesUI();
         updateStats(faultRate);
         logAccess(page, isFault);
@@ -166,24 +276,17 @@ async function accessPage(page) {
     }
 }
 
-async function setAlgorithm(algorithm, frame_count) {
-    try {
-        const response = await fetch("/set_algorithm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ algorithm, frame_count })
-        });
 
-        const data = await response.json();
+// --- OTHER AUXILIARY FUNCTIONS ---
 
-        if (data.error) throw new Error(data.error);
-
-        console.log(`✅ Switched to ${data.algorithm} algorithm with ${frame_count} frames`);
-        resetSimulation(data.metrics.frames); 
-
-    } catch (err) {
-        console.error("Set algorithm error:", err);
-        alert("Error changing algorithm: " + err.message);
+function initPageTable() {
+    const table = document.getElementById("page-table");
+    table.innerHTML = '';
+    for (let i = 0; i < pageTableSize; i++) {
+        const cell = document.createElement("div");
+        cell.id = `page-${i}`;
+        cell.textContent = i;
+        table.appendChild(cell);
     }
 }
 
@@ -220,23 +323,4 @@ function logAccess(page, isFault) {
     const li = document.createElement("li");
     li.textContent = `Page ${page} ${isFault ? "-> Page Fault" : "-> Hit"} (${currentAlgorithm})`;
     log.appendChild(li);
-}
-
-function resetSimulation(initialFrames = []) {
-    frameCount = parseInt(frameCountInput.value) || 4; 
-    
-    frames = initialFrames;
-    pageFaults = 0;
-    totalAccesses = 0;
-    
-    updateStats(0);
-    
-    updateFramesUI();
-    document.getElementById("log-entries").innerHTML = '';
-    document.getElementById("last-page").textContent = "-";
-    initPageTable();
-
-    // NEW: Reset the performance history and re-initialize the chart
-    performanceData = [];
-    initializeChart();
 }
